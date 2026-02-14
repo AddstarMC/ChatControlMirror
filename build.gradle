@@ -1,6 +1,7 @@
 plugins {
     id 'java'
     id 'eclipse'
+    id 'maven-publish'
     id 'org.jetbrains.gradle.plugin.idea-ext' version '1.1.8'
     id("xyz.jpenilla.run-velocity") version "2.3.1"
 }
@@ -47,6 +48,35 @@ tasks {
 def targetJavaVersion = 17
 java {
     toolchain.languageVersion = JavaLanguageVersion.of(targetJavaVersion)
+}
+
+publishing {
+    publications {
+        maven(MavenPublication) {
+            from components.java
+            groupId = project.group
+            artifactId = project.name
+            version = project.version
+        }
+    }
+    repositories {
+        maven {
+            name = 'artifactory'
+            url = 'https://maven.addstar.com.au/artifactory/gradle-release-local/'
+            credentials {
+                username = project.findProperty('artifactory_username') ?: System.getenv('ARTIFACTORY_USERNAME') ?: ''
+                password = project.findProperty('artifactory_password') ?: System.getenv('ARTIFACTORY_PASSWORD') ?: ''
+            }
+        }
+    }
+}
+
+// Copy generated POM to build/libs with Maven naming so CI can upload JAR + POM together
+tasks.register('preparePublication', Copy) {
+    dependsOn jar, generatePomFileForMavenPublication
+    from layout.buildDirectory.file("publications/maven/pom-default.xml")
+    into layout.buildDirectory.dir('libs')
+    rename { "${project.name}-${project.version}.pom" }
 }
 
 tasks.withType(JavaCompile).configureEach {
