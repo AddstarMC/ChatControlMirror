@@ -7,7 +7,11 @@ plugins {
 }
 
 group = 'au.com.addstar.ccm'
-version = '1.0.0'
+
+// Centralised version: semver 1.0.<build>. Jenkins sets BUILD_NUMBER; first build = 1.0.1, local = 1.0.0.
+def versionBase = findProperty('versionBase') ?: '1.0'
+def buildNumber = System.getenv('BUILD_NUMBER')
+version = (buildNumber != null && !buildNumber.isEmpty()) ? "${versionBase}.${buildNumber}" : "${versionBase}.0"
 
 repositories {
     mavenCentral()
