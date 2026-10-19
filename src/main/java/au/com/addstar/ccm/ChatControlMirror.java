@@ -5,6 +5,7 @@ import com.google.inject.Inject;
 import com.velocitypowered.api.command.CommandMeta;
 import com.velocitypowered.api.event.Subscribe;
 import com.velocitypowered.api.event.proxy.ProxyInitializeEvent;
+import com.velocitypowered.api.event.proxy.ProxyShutdownEvent;
 import com.velocitypowered.api.plugin.Plugin;
 import com.velocitypowered.api.plugin.annotation.DataDirectory;
 import com.velocitypowered.api.proxy.ProxyServer;
@@ -26,6 +27,7 @@ public class ChatControlMirror {
     private final Path dataDirectory;
 
     private ChatControlMirrorAPI api;
+    private RedisSubscriber redisSubscriber;
 
     @Inject
     public ChatControlMirror(ProxyServer proxy, Logger logger, @DataDirectory Path dataDirectory) {
@@ -54,9 +56,38 @@ public class ChatControlMirror {
             proxy.getCommandManager().register(debugMeta, new CcmDebugCommand(logger));
 
             logger.info("ChatControlMirror enabled. API and plugin message channel chatcontrolmirror:send are available.");
+
+            startRedis(sender);
         } catch (Throwable t) {
             logger.error("ChatControlMirror failed to initialize. Ensure VelocityControl is installed.", t);
             this.api = null;
+        }
+    }
+
+    @Subscribe
+    public void onProxyShutdown(ProxyShutdownEvent event) {
+        if (redisSubscriber != null) {
+            redisSubscriber.stop();
+            redisSubscriber = null;
+        }
+    }
+
+    /**
+     * Start the Redis subscriber if enabled. Failures are logged and never stop the rest of the plugin.
+     */
+    private void startRedis(ChannelSenderImpl sender) {
+        try {
+            RedisConfig config = RedisConfig.load(dataDirectory);
+            if (!config.enabled()) {
+                logger.info("Redis input disabled (redis.enabled is false in config.yml)");
+                return;
+            }
+            redisSubscriber = new RedisSubscriber(this, proxy, sender, logger, config);
+            redisSubscriber.start();
+            logger.info("Redis input enabled: connecting to {}:{} channel '{}'", config.host(), config.port(), config.channel());
+        } catch (Throwable t) {
+            logger.error("Redis input failed to start; plugin message channel and /ccmsend still work", t);
+            redisSubscriber = null;
         }
     }
 

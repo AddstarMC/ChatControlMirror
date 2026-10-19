@@ -1,0 +1,11 @@
+# ChatControlMirror configuration
+
+redis:
+  # Subscribe to a Redis pub/sub channel and forward JSON payloads to ChatControl channels.
+  enabled: false
+  host: localhost
+  port: 6379
+  # Leave empty if Redis has no password.
+  password: ""
+  # Redis pub/sub channel to subscribe to.
+  channel: "chatcontrolmirror:send"

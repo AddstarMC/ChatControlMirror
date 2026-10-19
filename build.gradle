@@ -2,8 +2,9 @@ plugins {
     id 'java'
     id 'eclipse'
     id 'maven-publish'
-    id 'org.jetbrains.gradle.plugin.idea-ext' version '1.1.8'
-    id("xyz.jpenilla.run-velocity") version "2.3.1"
+    id 'org.jetbrains.gradle.plugin.idea-ext' version '1.4.1'
+    id("xyz.jpenilla.run-velocity") version "3.1.0"
+    id 'com.gradleup.shadow' version '9.6.1'
 }
 
 group = 'au.com.addstar.ccm'
@@ -25,8 +26,9 @@ repositories {
     }
 }
 
-// If VelocityControl JAR is in lib/ (e.g. when Maven parent POM is missing from repo), use it for compilation.
-def vcJar = file("lib/chatcontrol-velocity-2.4.4.jar")
+// If the VelocityControl JAR is in lib/ (e.g. when the version isn't in the Maven repo), use it for compilation.
+def vcVersion = findProperty('vcVersion')
+def vcJar = file("lib/VelocityControl-${vcVersion}.jar")
 def useLocalVc = vcJar.exists()
 
 dependencies {
@@ -35,9 +37,14 @@ dependencies {
     if (useLocalVc) {
         compileOnly(files(vcJar))
     } else {
-        compileOnly(group: "org.mineacademy", name: "chatcontrol-velocity", version: "2.4.4")
+        compileOnly(group: "org.mineacademy", name: "chatcontrol-velocity", version: vcVersion)
     }
     compileOnly("net.kyori:adventure-text-minimessage:4.26.1")
+    // Velocity provides slf4j and Gson; everything else is shaded and relocated.
+    implementation("redis.clients:jedis:8.0.2") {
+        exclude group: "org.slf4j"
+        exclude group: "com.google.code.gson"
+    }
 }
 
 tasks {
@@ -49,15 +56,30 @@ tasks {
     }
 }
 
-def targetJavaVersion = 17
+def targetJavaVersion = 25
 java {
     toolchain.languageVersion = JavaLanguageVersion.of(targetJavaVersion)
 }
 
+def relocationBase = 'au.com.addstar.ccm.lib'
+shadowJar {
+    archiveClassifier = ''
+    relocate 'redis.clients', "${relocationBase}.redis.clients"
+    relocate 'org.apache.commons.pool2', "${relocationBase}.commons.pool2"
+    relocate 'org.json', "${relocationBase}.json"
+    mergeServiceFiles()
+}
+
+// Only the shaded JAR is a usable plugin, so don't build the plain one.
+jar {
+    enabled = false
+}
+assemble.dependsOn shadowJar
+
 publishing {
     publications {
         maven(MavenPublication) {
-            from components.java
+            from components.shadow
             groupId = project.group
             artifactId = project.name
             version = project.version
@@ -77,10 +99,11 @@ publishing {
 
 // Copy generated POM to build/libs with Maven naming so CI can upload JAR + POM together
 tasks.register('preparePublication', Copy) {
-    dependsOn jar, generatePomFileForMavenPublication
+    dependsOn shadowJar, generatePomFileForMavenPublication
     from layout.buildDirectory.file("publications/maven/pom-default.xml")
     into layout.buildDirectory.dir('libs')
-    rename { "${project.name}-${project.version}.pom" }
+    def pomName = "${project.name}-${project.version}.pom"
+    rename { pomName }
 }
 
 tasks.withType(JavaCompile).configureEach {
